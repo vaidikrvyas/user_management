@@ -74,28 +74,48 @@ async def test_delete_user(async_client, admin_user, admin_token):
 
 
 @pytest.mark.asyncio
-async def test_create_user_duplicate_email(async_client, verified_user):
+async def test_create_user_duplicate_email(async_client, admin_token):
+    headers = {"Authorization": f"***"}
     user_data = {
-        "email": verified_user.email,
-        "password": "AnotherPassword123!",
-        "role": UserRole.ADMIN.name,
+        "nickname": generate_nickname(),
+        "email": "test@example.com",
+        "password": "sS#fdasrongPassword123!",
     }
-    response = await async_client.post("/register/", json=user_data)
-    assert response.status_code == 400
-    assert "Email or Nickname already exists" in response.json().get("detail", "")
+    # First call to create the user
+    response = await async_client.post("/users/", json=user_data, headers=headers)
+    assert response.status_code == 201  # First creation should be successful
+
+    # Second call to create the same user with a duplicate email
+    response = await async_client.post("/users/", json=user_data, headers=headers)
+    assert response.status_code == 422  # Expecting failure due to duplicate email
+    assert 'duplicate email' in response.text  # Check if the response contains the correct error message
+
 
 
 @pytest.mark.asyncio
-async def test_create_user_duplicate_nickname(async_client, verified_user):
-    user_data = {
-        "email": "AnotherEmail123@example.com",
-        "password": "AnotherPassword123!",
-        "nickname": verified_user.nickname,
-        "role": UserRole.ADMIN.name,
+async def test_create_user_duplicate_nickname(async_client, admin_token):
+    headers = {"Authorization": f"***"}
+    # Define user data for the first user
+    user_data_1 = {
+        "nickname": "Duplicate_Nickname",
+        "email": "test123@example.com",
+        "password": "sS#fdasrongPassword123!",
     }
-    response = await async_client.post("/register/", json=user_data)
-    assert response.status_code == 400
-    assert "Email or Nickname already exists" in response.json().get("detail", "")
+    # Post request to create the first user
+    response = await async_client.post("/users/", json=user_data_1, headers=headers)
+    assert response.status_code == 201  # First creation should be successful
+
+    # Define user data for the second user with the same nickname but different email
+    user_data_2 = {
+        "nickname": "Duplicate_Nickname",
+        "email": "testabc@example.com",
+        "password": "sS#fdasrongPassword123!",
+    }
+    # Post request to create the second user
+    response = await async_client.post("/users/", json=user_data_2, headers=headers)
+    assert response.status_code == 422  # Expecting failure due to duplicate nickname
+    assert 'duplicate nickname' in response.text  # Check if the response contains the correct error message
+
 
 
 @pytest.mark.asyncio
