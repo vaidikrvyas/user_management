@@ -5,26 +5,25 @@ from app.main import app
 from app.models.user_model import User, UserRole
 from app.utils.nickname_gen import generate_nickname
 from app.utils.security import hash_password
-from app.services.jwt_service import decode_token  # Import your FastAPI app
+from app.services.jwt_service import decode_token
+from unittest.mock import patch
 
 
-# Example of a test function using the async_client fixture
 @pytest.mark.asyncio
 async def test_create_user_access_denied(async_client, user_token, email_service):
     headers = {"Authorization": f"Bearer {user_token}"}
-    # Define user data for the test
+
     user_data = {
         "nickname": generate_nickname(),
         "email": "test@example.com",
         "password": "sS#fdasrongPassword123!",
     }
-    # Send a POST request to create a user
+
     response = await async_client.post("/users/", json=user_data, headers=headers)
-    # Asserts
+
     assert response.status_code == 403
 
 
-# You can similarly refactor other test functions to use the async_client fixture
 @pytest.mark.asyncio
 async def test_retrieve_user_access_denied(async_client, verified_user, user_token):
     headers = {"Authorization": f"Bearer {user_token}"}
@@ -68,34 +67,9 @@ async def test_delete_user(async_client, admin_user, admin_token):
         f"/users/{admin_user.id}", headers=headers
     )
     assert delete_response.status_code == 204
-    # Verify the user is deleted
+
     fetch_response = await async_client.get(f"/users/{admin_user.id}", headers=headers)
     assert fetch_response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_create_user_duplicate_email(async_client, verified_user):
-    user_data = {
-        "email": verified_user.email,
-        "password": "AnotherPassword123!",
-        "role": UserRole.ADMIN.name,
-    }
-    response = await async_client.post("/register/", json=user_data)
-    assert response.status_code == 400
-    assert "Email or Nickname already exists" in response.json().get("detail", "")
-
-
-@pytest.mark.asyncio
-async def test_create_user_duplicate_nickname(async_client, verified_user):
-    user_data = {
-        "email": "AnotherEmail123@example.com",
-        "password": "AnotherPassword123!",
-        "nickname": verified_user.nickname,
-        "role": UserRole.ADMIN.name,
-    }
-    response = await async_client.post("/register/", json=user_data)
-    assert response.status_code == 400
-    assert "Email or Nickname already exists" in response.json().get("detail", "")
 
 
 @pytest.mark.asyncio
@@ -115,7 +89,7 @@ from urllib.parse import urlencode
 
 @pytest.mark.asyncio
 async def test_login_success(async_client, verified_user):
-    # Attempt to login with the test user
+
     form_data = {"username": verified_user.email, "password": "MySuperPassword$1234"}
     response = await async_client.post(
         "/login/",
@@ -123,13 +97,11 @@ async def test_login_success(async_client, verified_user):
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
-    # Check for successful login response
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
 
-    # Use the decode_token method from jwt_service to decode the JWT
     decoded_token = decode_token(data["access_token"])
     assert decoded_token is not None, "Failed to decode token"
     assert (
@@ -192,7 +164,7 @@ async def test_login_locked_user(async_client, locked_user):
 
 @pytest.mark.asyncio
 async def test_delete_user_does_not_exist(async_client, admin_token):
-    non_existent_user_id = "00000000-0000-0000-0000-000000000000"  # Valid UUID format
+    non_existent_user_id = "00000000-0000-0000-0000-000000000000"
     headers = {"Authorization": f"Bearer {admin_token}"}
     delete_response = await async_client.delete(
         f"/users/{non_existent_user_id}", headers=headers
@@ -246,45 +218,106 @@ async def test_list_users_unauthorized(async_client, user_token):
     response = await async_client.get(
         "/users/", headers={"Authorization": f"Bearer {user_token}"}
     )
-    assert response.status_code == 403  # Forbidden, as expected for regular user
+    assert response.status_code == 403
 
 
-# Example of a test function using the async_client fixture
-@pytest.mark.asyncio
-async def test_create_user_duplicate_email(async_client, admin_token):
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    # Define user data for the test
-    user_data = {
-        "nickname": generate_nickname(),
-        "email": "test@example.com",
-        "password": "sS#fdasrongPassword123!",
-    }
-    response = await async_client.post("/users/", json=user_data, headers=headers)
-    assert response.status_code == 201
-    # Send a POST request to create a user
-    response = await async_client.post("/users/", json=user_data, headers=headers)
-    # Asserts
-    assert response.status_code == 400
-
-
-# Example of a test function using the async_client fixture
 @pytest.mark.asyncio
 async def test_create_user_duplicate_nickname(async_client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    # Define user data for the test
+    nickname = "TestUser123"
+
     user_data_1 = {
-        "nickname": "Duplicate_Nickname",
-        "email": "test123@example.com",
-        "password": "sS#fdasrongPassword123!",
+        "nickname": nickname,
+        "email": "testuser1@example.com",
+        "password": "SecurePassw0rd!",
+        "role": "ADMIN",
     }
+
     user_data_2 = {
-        "nickname": "Duplicate_Nickname",
-        "email": "testabc@example.com",
-        "password": "sS#fdasrongPassword123!",
+        "nickname": nickname,
+        "email": "testuser2@example.com",
+        "password": "SecurePassw0rd!",
+        "role": "ADMIN",
     }
-    response = await async_client.post("/users/", json=user_data_1, headers=headers)
-    assert response.status_code == 201
-    # Send a POST request to create a user
-    response = await async_client.post("/users/", json=user_data_2, headers=headers)
-    # Asserts
+
+    # Mock the 'send_verification_email' method from the 'EmailService' class
+    with patch(
+        "app.services.email_service.EmailService.send_verification_email"
+    ) as mock_send_email:
+        mock_send_email.return_value = (
+            None  # Assume sending email is successfully mocked
+        )
+
+        # Create the first user
+        response = await async_client.post("/users/", json=user_data_1, headers=headers)
+        assert response.status_code == 201, "Failed to create first user"
+
+        # Attempt to create a second user with the same nickname
+        response = await async_client.post("/users/", json=user_data_2, headers=headers)
+        assert (
+            response.status_code == 400
+        ), "Did not handle duplicate nickname correctly"
+
+
+from unittest.mock import patch
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_create_user_duplicate_email(async_client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    email = "test@example.com"
+    user_data_1 = {
+        "nickname": generate_nickname(),
+        "email": email,
+        "password": "sS#fdasrongPassword123!",
+        "role": "ADMIN",
+    }
+
+    user_data_2 = {
+        "nickname": generate_nickname(),
+        "email": email,
+        "password": "AnotherStrongPassword123!",
+        "role": "ADMIN",
+    }
+
+    with patch(
+        "app.services.email_service.EmailService.send_verification_email"
+    ) as mock_send_email:
+        mock_send_email.return_value = (
+            None  # Assume sending email is successfully mocked
+        )
+
+        # Create the first user
+        response1 = await async_client.post(
+            "/users/", json=user_data_1, headers=headers
+        )
+        assert response1.status_code == 201, "Failed to create first user"
+
+        # Attempt to create a second user with the same email
+        response2 = await async_client.post(
+            "/users/", json=user_data_2, headers=headers
+        )
+        assert response2.status_code == 400, "Duplicate email should result in an error"
+
+
+@pytest.mark.asyncio
+async def test_list_users_invalid_skip_integer(async_client, admin_token):
+    response = await async_client.get(
+        "/users/",
+        params={"skip": -1},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
     assert response.status_code == 400
+    assert response.json()["detail"] == "Skip integer cannot be less than 0"
+
+
+@pytest.mark.asyncio
+async def test_list_users_invalid_limit_integer(async_client, admin_token):
+    response = await async_client.get(
+        "/users/",
+        params={"limit": 0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Limit integer cannot be less than 1"
